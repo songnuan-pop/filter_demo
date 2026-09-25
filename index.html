@@ -84,3 +84,439 @@
     font-weight: 500;
     padding: 5px 10px;
     border: 1px dashed var(--text-dim);
+    border-radius: 6px;
+    background: rgba(23,26,38,0.85);
+    color: var(--text-dim);
+    z-index: 10;
+  }
+  .status-badge.live { border-color: var(--success); color: var(--success); }
+  .meta-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 10px;
+  }
+  @media (max-width: 600px) { .meta-grid { grid-template-columns: 1fr; } }
+  .meta-card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px 16px;
+  }
+  .meta-card .label {
+    font-size: 0.65rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-dim);
+    margin-bottom: 4px;
+  }
+  .meta-card .value {
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: var(--accent);
+  }
+  .meta-card .value.static {
+    font-size: 0.9rem;
+    color: var(--text);
+    font-weight: 500;
+  }
+  .controls {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 18px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+  .upload-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+  .upload-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 16px;
+    background: transparent;
+    border: 1px solid var(--accent);
+    border-radius: 8px;
+    color: var(--accent);
+    font-size: 0.9rem;
+    font-weight: 500;
+    cursor: pointer;
+    -webkit-appearance: none;
+  }
+  .upload-btn:active { background: var(--accent); color: #000; }
+  #fileInput { display: none; }
+  .file-name {
+    font-size: 0.8rem;
+    color: var(--text-dim);
+    max-width: 180px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .slider-section label {
+    display: block;
+    font-size: 0.85rem;
+    color: var(--text);
+    margin-bottom: 10px;
+  }
+  .slider-wrap {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  input[type="range"] {
+    flex: 1;
+    -webkit-appearance: none;
+    appearance: none;
+    height: 8px;
+    background: var(--border);
+    border-radius: 4px;
+    outline: none;
+  }
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    background: var(--accent);
+    cursor: pointer;
+    border: 2px solid #fff;
+  }
+  .freq-readout {
+    min-width: 70px;
+    text-align: right;
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: var(--accent);
+  }
+  footer { text-align: center; font-size: 0.7rem; color: var(--text-dim); }
+</style>
+</head>
+<body>
+  <div class="dashboard">
+    <header>
+      <h1>Sallen-Key Lowpass Filter</h1>
+      <p>2nd-Order · Mobile Optimized</p>
+    </header>
+
+    <div class="curve-panel">
+      <canvas id="bodeCanvas"></canvas>
+      <button class="play-toggle" id="playBtn" disabled>
+        <svg id="iconPlay" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+        <svg id="iconStop" viewBox="0 0 24 24" fill="currentColor" style="display:none"><rect x="6" y="6" width="12" height="12"/></svg>
+      </button>
+      <div class="status-badge" id="statusBadge">Audio Muted</div>
+    </div>
+
+    <div class="meta-grid">
+      <div class="meta-card">
+        <div class="label">Cutoff Freq</div>
+        <div class="value" id="cutoffDisplay">250 Hz</div>
+      </div>
+      <div class="meta-card">
+        <div class="label">Filter Configuration</div>
+        <div class="value static">2nd-Order Sallen-Key LP (Q=0.707)</div>
+      </div>
+      <div class="meta-card">
+        <div class="label">Audio Stream Status</div>
+        <div class="value" id="streamStatus">No Track Loaded</div>
+      </div>
+    </div>
+
+    <div class="controls">
+      <div class="upload-row">
+        <label class="upload-btn" for="fileInput">Upload Audio (.mp3 / .wav)</label>
+        <input type="file" id="fileInput" accept="audio/*,.mp3,.wav">
+        <span class="file-name" id="fileName">No file selected</span>
+      </div>
+
+      <div class="slider-section">
+        <label for="cutoffSlider">Adjust Cutoff for Low-Frequency Extraction</label>
+        <div class="slider-wrap">
+          <input type="range" id="cutoffSlider" min="40" max="2000" value="250" step="1">
+          <span class="freq-readout" id="sliderReadout">250 Hz</span>
+        </div>
+      </div>
+    </div>
+
+    <footer>Mobile Optimized · Web Audio API</footer>
+  </div>
+
+<script>
+(function () {
+  'use strict';
+
+  const Q = 0.707;
+  const FMIN = 20, FMAX = 20000;
+  const DB_MIN = -60, DB_MAX = 6;
+
+  const canvas = document.getElementById('bodeCanvas');
+  const ctx = canvas.getContext('2d');
+  const playBtn = document.getElementById('playBtn');
+  const iconPlay = document.getElementById('iconPlay');
+  const iconStop = document.getElementById('iconStop');
+  const statusBadge = document.getElementById('statusBadge');
+  const cutoffDisplay = document.getElementById('cutoffDisplay');
+  const streamStatus = document.getElementById('streamStatus');
+  const fileInput = document.getElementById('fileInput');
+  const fileName = document.getElementById('fileName');
+  const cutoffSlider = document.getElementById('cutoffSlider');
+  const sliderReadout = document.getElementById('sliderReadout');
+
+  let audioCtx = null;
+  let sourceNode = null;
+  let filterNode = null;
+  let gainNode = null;
+  let audioBuffer = null;
+  let isPlaying = false;
+  let cutoffHz = 250;
+
+  function computeBiquadCoeffs(fc, fs, q) {
+    const w0 = 2 * Math.PI * fc / fs;
+    const cosw0 = Math.cos(w0);
+    const sinw0 = Math.sin(w0);
+    const alpha = sinw0 / (2 * q);
+    const b0 = (1 - cosw0) / 2;
+    const b1 = 1 - cosw0;
+    const b2 = (1 - cosw0) / 2;
+    const a0 = 1 + alpha;
+    const a1 = -2 * cosw0;
+    const a2 = 1 - alpha;
+    return { b0: b0/a0, b1: b1/a0, b2: b2/a0, a1: a1/a0, a2: a2/a0 };
+  }
+
+  function magnitudeDb(f, c, fs) {
+    const w = 2 * Math.PI * f / fs;
+    const cosw = Math.cos(w), cos2w = Math.cos(2*w);
+    const sinw = Math.sin(w), sin2w = Math.sin(2*w);
+    const reN = c.b0 + c.b1*cosw + c.b2*cos2w;
+    const imN = -c.b1*sinw - c.b2*sin2w;
+    const reD = 1 + c.a1*cosw + c.a2*cos2w;
+    const imD = -c.a1*sinw - c.a2*sin2w;
+    const mag2 = (reN*reN + imN*imN) / (reD*reD + imD*imD);
+    return 10 * Math.log10(Math.max(mag2, 1e-30));
+  }
+
+  function drawBode() {
+    const dpr = window.devicePixelRatio || 1;
+    const w = canvas.clientWidth || 900;
+    const h = canvas.clientHeight || 220;
+    canvas.width = w * dpr;
+    canvas.height = h * dpr;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+    const padL = 46, padR = 12, padT = 20, padB = 30;
+    const plotW = w - padL - padR;
+    const plotH = h - padT - padB;
+
+    ctx.fillStyle = '#141722';
+    ctx.fillRect(0, 0, w, h);
+
+    ctx.strokeStyle = '#252a3d';
+    ctx.lineWidth = 1;
+    [20,50,100,200,500,1000,2000,5000,10000,20000].forEach(f => {
+      if (f < FMIN || f > FMAX) return;
+      const x = padL + plotW * (Math.log10(f) - Math.log10(FMIN)) / (Math.log10(FMAX) - Math.log10(FMIN));
+      ctx.beginPath(); ctx.moveTo(x, padT); ctx.lineTo(x, padT + plotH); ctx.stroke();
+    });
+    for (let db = DB_MIN; db <= DB_MAX; db += 12) {
+      const y = padT + plotH * (1 - (db - DB_MIN) / (DB_MAX - DB_MIN));
+      ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(padL + plotW, y); ctx.stroke();
+    }
+
+    ctx.fillStyle = '#6a7388';
+    ctx.font = '10px system-ui,sans-serif';
+    ctx.textAlign = 'center';
+    [100,1000,10000].forEach(f => {
+      const x = padL + plotW * (Math.log10(f) - Math.log10(FMIN)) / (Math.log10(FMAX) - Math.log10(FMIN));
+      ctx.fillText(f >= 1000 ? (f/1000)+'k' : f, x, h - 10);
+    });
+
+    const fs = (audioCtx && audioCtx.sampleRate) ? audioCtx.sampleRate : 44100;
+    const coeffs = computeBiquadCoeffs(cutoffHz, fs, Q);
+
+    ctx.beginPath();
+    ctx.strokeStyle = '#00e5ff';
+    ctx.lineWidth = 2;
+    const steps = 360;
+    for (let i = 0; i <= steps; i++) {
+      const t = i / steps;
+      const f = Math.pow(10, Math.log10(FMIN) + t * (Math.log10(FMAX) - Math.log10(FMIN)));
+      const db = magnitudeDb(f, coeffs, fs);
+      const x = padL + plotW * t;
+      const y = padT + plotH * (1 - (Math.max(DB_MIN, Math.min(DB_MAX, db)) - DB_MIN) / (DB_MAX - DB_MIN));
+      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+
+    const tCut = (Math.log10(cutoffHz) - Math.log10(FMIN)) / (Math.log10(FMAX) - Math.log10(FMIN));
+    const xCut = padL + plotW * tCut;
+    const dbCut = magnitudeDb(cutoffHz, coeffs, fs);
+    const yCut = padT + plotH * (1 - (Math.max(DB_MIN, Math.min(DB_MAX, dbCut)) - DB_MIN) / (DB_MAX - DB_MIN));
+
+    ctx.strokeStyle = 'rgba(255,64,129,0.45)';
+    ctx.setLineDash([4,4]);
+    ctx.beginPath(); ctx.moveTo(xCut, padT); ctx.lineTo(xCut, padT + plotH); ctx.stroke();
+    ctx.setLineDash([]);
+
+    ctx.beginPath();
+    ctx.arc(xCut, yCut, 5, 0, Math.PI*2);
+    ctx.fillStyle = '#ff4081';
+    ctx.fill();
+    ctx.strokeStyle = '#fff';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+  }
+
+  function ensureCtx() {
+    if (!audioCtx) {
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    }
+    return audioCtx;
+  }
+
+  function getMakeupGain(fc) {
+    const ratio = Math.max(0.12, Math.min(1, fc / 1000));
+    return (1 / Math.sqrt(ratio)) * 1.1;   // 稍微提高整体音量
+  }
+
+  function buildGraph() {
+    if (!audioBuffer) return;
+    const ctx = ensureCtx();
+
+    if (sourceNode) {
+      try { sourceNode.stop(); } catch(e){}
+      try { sourceNode.disconnect(); } catch(e){}
+    }
+    if (filterNode) try { filterNode.disconnect(); } catch(e){}
+    if (gainNode) try { gainNode.disconnect(); } catch(e){}
+
+    sourceNode = ctx.createBufferSource();
+    sourceNode.buffer = audioBuffer;
+    sourceNode.loop = true;
+
+    filterNode = ctx.createBiquadFilter();
+    filterNode.type = 'lowpass';
+    filterNode.frequency.value = cutoffHz;
+    filterNode.Q.value = Q;
+
+    gainNode = ctx.createGain();
+    gainNode.gain.value = getMakeupGain(cutoffHz);
+
+    sourceNode.connect(filterNode);
+    filterNode.connect(gainNode);
+    gainNode.connect(ctx.destination);
+  }
+
+  // ========== 手机关键修复：播放按钮点击时强制 resume ==========
+  async function startPlayback() {
+    if (!audioBuffer) return;
+
+    const ctx = ensureCtx();
+
+    // 必须在用户手势里 resume，这是手机没声音的最常见原因
+    if (ctx.state === 'suspended') {
+      try {
+        await ctx.resume();
+      } catch (e) {
+        console.warn('resume failed', e);
+      }
+    }
+
+    buildGraph();
+    sourceNode.start(0);
+    isPlaying = true;
+
+    iconPlay.style.display = 'none';
+    iconStop.style.display = 'block';
+    statusBadge.textContent = 'Filtering Live Output';
+    statusBadge.classList.add('live');
+    streamStatus.textContent = 'Playing · Filtered';
+  }
+
+  function stopPlayback() {
+    if (sourceNode) {
+      try { sourceNode.stop(); } catch(e){}
+      try { sourceNode.disconnect(); } catch(e){}
+      sourceNode = null;
+    }
+    isPlaying = false;
+    iconPlay.style.display = 'block';
+    iconStop.style.display = 'none';
+    statusBadge.textContent = 'Audio Muted';
+    statusBadge.classList.remove('live');
+    streamStatus.textContent = audioBuffer ? 'Ready · Paused' : 'No Track Loaded';
+  }
+
+  function formatFreq(hz) {
+    return hz >= 1000 ? (hz/1000).toFixed(hz >= 10000 ? 1 : 2) + ' kHz' : Math.round(hz) + ' Hz';
+  }
+
+  function updateCutoff(val) {
+    cutoffHz = +val;
+    cutoffDisplay.textContent = formatFreq(cutoffHz);
+    sliderReadout.textContent = formatFreq(cutoffHz);
+
+    if (filterNode && audioCtx) {
+      const now = audioCtx.currentTime;
+      filterNode.frequency.setTargetAtTime(cutoffHz, now, 0.02);
+      filterNode.Q.setTargetAtTime(Q, now, 0.02);
+    }
+    if (gainNode && audioCtx) {
+      gainNode.gain.setTargetAtTime(getMakeupGain(cutoffHz), audioCtx.currentTime, 0.04);
+    }
+    drawBode();
+  }
+
+  cutoffSlider.addEventListener('input', e => updateCutoff(e.target.value));
+
+  playBtn.addEventListener('click', async () => {
+    if (!audioBuffer) return;
+    if (isPlaying) {
+      stopPlayback();
+    } else {
+      await startPlayback();   // 关键：用 async 确保 resume 完成
+    }
+  });
+
+  fileInput.addEventListener('change', async e => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    fileName.textContent = file.name;
+    streamStatus.textContent = 'Decoding…';
+    playBtn.disabled = true;
+    stopPlayback();
+
+    try {
+      const arrayBuf = await file.arrayBuffer();
+      const ctx = ensureCtx();
+      // 尝试提前 resume（有些手机需要）
+      if (ctx.state === 'suspended') {
+        try { await ctx.resume(); } catch(e){}
+      }
+      audioBuffer = await ctx.decodeAudioData(arrayBuf.slice(0));
+      streamStatus.textContent = 'Ready · Paused';
+      playBtn.disabled = false;
+      drawBode();
+    } catch (err) {
+      console.error(err);
+      streamStatus.textContent = 'Decode Error';
+      fileName.textContent = 'Failed';
+      audioBuffer = null;
+      playBtn.disabled = true;
+    }
+  });
+
+  window.addEventListener('resize', drawBode);
+  updateCutoff(250);
+  drawBode();
+})();
+</script>
+</body>
+</html>
