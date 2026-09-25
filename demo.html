@@ -1,521 +1,792 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>Sallen-Key Lowpass Filter</title>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Sallen-Key Digital Lowpass — Filter Console</title>
 <style>
-  :root {
-    --bg: #171a26;
-    --panel: #1e2235;
-    --border: #2a3048;
-    --accent: #00e5ff;
-    --text: #e0e6f0;
-    --text-dim: #8a94a8;
-    --success: #69f0ae;
+  :root{
+    --bg:#171a26;
+    --panel:#1d2133;
+    --panel-2:#20253a;
+    --line:#2c3350;
+    --line-soft:#262b42;
+    --text:#e7eaf5;
+    --muted:#8891ac;
+    --cyan:#4beeff;
+    --cyan-dim:#2a8a99;
+    --magenta:#ff5fd1;
+    --amber:#ffb454;
+    --ok:#4beeff;
+    box-sizing:border-box;
+    padding-top:env(safe-area-inset-top,0px);
+    padding-bottom:env(safe-area-inset-bottom,0px);
   }
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  body {
-    background: var(--bg);
-    color: var(--text);
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
-    min-height: 100vh;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    padding: 16px 12px;
-    -webkit-tap-highlight-color: transparent;
+  *{box-sizing:border-box;}
+  html,body{
+    margin:0;
+    height:100%;
+    background:var(--bg);
+    color:var(--text);
+    font-family:'JetBrains Mono','Fira Code',ui-monospace,'SFMono-Regular',Menlo,Consolas,monospace;
   }
-  .dashboard {
-    width: 100%;
-    max-width: 960px;
-    display: flex;
-    flex-direction: column;
-    gap: 16px;
+  body{
+    background-image:
+      radial-gradient(circle at 15% 0%, rgba(75,238,255,0.06), transparent 45%),
+      radial-gradient(circle at 85% 10%, rgba(255,95,209,0.05), transparent 40%);
+    padding:32px 20px 56px;
   }
-  header { text-align: center; }
-  header h1 {
-    font-size: 1.2rem;
-    font-weight: 600;
-    letter-spacing: 0.04em;
-    color: var(--accent);
-    text-transform: uppercase;
+  .wrap{max-width:920px;margin:0 auto;}
+
+  header{
+    display:flex;
+    justify-content:space-between;
+    align-items:flex-end;
+    gap:16px;
+    margin-bottom:22px;
+    flex-wrap:wrap;
   }
-  header p { font-size: 0.8rem; color: var(--text-dim); margin-top: 4px; }
-  .curve-panel {
-    position: relative;
-    background: var(--panel);
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    overflow: hidden;
+  .brand-mark{
+    font-size:11px;
+    letter-spacing:.12em;
+    color:var(--cyan-dim);
   }
-  #bodeCanvas {
-    display: block;
-    width: 100%;
-    height: 220px;
-    background: linear-gradient(180deg, #1a1e30 0%, #141722 100%);
+  h1{
+    font-family:'Space Grotesk','Segoe UI',Helvetica,Arial,sans-serif;
+    font-weight:600;
+    font-size:26px;
+    margin:4px 0 6px;
+    letter-spacing:.01em;
   }
-  .play-toggle {
-    position: absolute;
-    top: 12px;
-    right: 12px;
-    width: 52px;
-    height: 52px;
-    border-radius: 50%;
-    border: 2px solid var(--accent);
-    background: rgba(23,26,38,0.95);
-    color: var(--accent);
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 10;
-    -webkit-appearance: none;
-    font-size: 0;
+  h1 span{color:var(--cyan);}
+  .sub{
+    color:var(--muted);
+    font-size:13px;
+    max-width:52ch;
+    line-height:1.5;
   }
-  .play-toggle:active { background: var(--accent); color: #000; }
-  .play-toggle:disabled { opacity: 0.4; }
-  .play-toggle svg { width: 22px; height: 22px; pointer-events: none; }
-  .status-badge {
-    position: absolute;
-    bottom: 10px;
-    left: 10px;
-    font-size: 0.7rem;
-    font-weight: 500;
-    padding: 5px 10px;
-    border: 1px dashed var(--text-dim);
-    border-radius: 6px;
-    background: rgba(23,26,38,0.85);
-    color: var(--text-dim);
-    z-index: 10;
+  .signature{
+    text-align:right;
+    font-size:11px;
+    color:var(--muted);
+    line-height:1.6;
   }
-  .status-badge.live { border-color: var(--success); color: var(--success); }
-  .meta-grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr 1fr;
-    gap: 10px;
+  .signature b{color:var(--text);font-weight:600;}
+
+  /* ---- curve panel ---- */
+  .panel{
+    position:relative;
+    background:linear-gradient(180deg,var(--panel),var(--panel-2));
+    border:1px solid var(--line);
+    border-radius:10px;
+    padding:18px 18px 14px;
+    overflow:hidden;
   }
-  @media (max-width: 600px) { .meta-grid { grid-template-columns: 1fr; } }
-  .meta-card {
-    background: var(--panel);
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    padding: 14px 16px;
+  .panel::before{
+    content:"";
+    position:absolute;inset:0;
+    background-image:linear-gradient(rgba(75,238,255,0.025) 1px, transparent 1px);
+    background-size:100% 24px;
+    pointer-events:none;
   }
-  .meta-card .label {
-    font-size: 0.65rem;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    color: var(--text-dim);
-    margin-bottom: 4px;
+  .panel-head{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    margin-bottom:6px;
   }
-  .meta-card .value {
-    font-size: 1.1rem;
-    font-weight: 600;
-    color: var(--accent);
+  .panel-title{
+    font-size:11px;
+    letter-spacing:.1em;
+    color:var(--muted);
   }
-  .meta-card .value.static {
-    font-size: 0.9rem;
-    color: var(--text);
-    font-weight: 500;
+  .panel-title b{color:var(--text);font-weight:600;}
+
+  .play-toggle{
+    width:42px;height:42px;
+    border-radius:50%;
+    border:1px solid var(--cyan-dim);
+    background:rgba(75,238,255,0.06);
+    color:var(--cyan);
+    display:flex;align-items:center;justify-content:center;
+    cursor:pointer;
+    transition:transform .15s ease, box-shadow .2s ease, background .2s ease;
+    flex-shrink:0;
   }
-  .controls {
-    background: var(--panel);
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    padding: 18px 16px;
-    display: flex;
-    flex-direction: column;
-    gap: 16px;
+  .play-toggle:hover{background:rgba(75,238,255,0.14);}
+  .play-toggle:active{transform:scale(.94);}
+  .play-toggle.on{
+    box-shadow:0 0 0 4px rgba(75,238,255,0.08), 0 0 18px rgba(75,238,255,0.35);
+    border-color:var(--cyan);
   }
-  .upload-row {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    flex-wrap: wrap;
+  .play-toggle svg{width:16px;height:16px;}
+  .play-toggle:disabled{opacity:.35;cursor:not-allowed;}
+
+  .curve-shell{position:relative;}
+  canvas#bode{
+    width:100%;
+    height:280px;
+    display:block;
+    border-radius:6px;
   }
-  .upload-btn {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    padding: 12px 16px;
-    background: transparent;
-    border: 1px solid var(--accent);
-    border-radius: 8px;
-    color: var(--accent);
-    font-size: 0.9rem;
-    font-weight: 500;
-    cursor: pointer;
-    -webkit-appearance: none;
+
+  .badge{
+    position:absolute;
+    left:18px; bottom:16px;
+    display:inline-flex;
+    align-items:center;
+    gap:7px;
+    padding:6px 11px;
+    border:1px dashed var(--line);
+    border-radius:20px;
+    font-size:11px;
+    letter-spacing:.04em;
+    color:var(--muted);
+    background:rgba(23,26,38,0.7);
+    backdrop-filter:blur(2px);
+    transition:border-color .2s ease, color .2s ease;
   }
-  .upload-btn:active { background: var(--accent); color: #000; }
-  #fileInput { display: none; }
-  .file-name {
-    font-size: 0.8rem;
-    color: var(--text-dim);
-    max-width: 180px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+  .badge .dot{
+    width:7px;height:7px;border-radius:50%;
+    background:var(--muted);
+    flex-shrink:0;
   }
-  .slider-section label {
-    display: block;
-    font-size: 0.85rem;
-    color: var(--text);
-    margin-bottom: 10px;
+  .badge.live{
+    border-color:var(--cyan-dim);
+    color:var(--cyan);
   }
-  .slider-wrap {
-    display: flex;
-    align-items: center;
-    gap: 12px;
+  .badge.live .dot{
+    background:var(--cyan);
+    box-shadow:0 0 8px var(--cyan);
+    animation:pulse 1.4s ease-in-out infinite;
   }
-  input[type="range"] {
-    flex: 1;
-    -webkit-appearance: none;
-    appearance: none;
-    height: 8px;
-    background: var(--border);
-    border-radius: 4px;
-    outline: none;
+  @keyframes pulse{
+    0%,100%{opacity:1;}
+    50%{opacity:.35;}
   }
-  input[type="range"]::-webkit-slider-thumb {
-    -webkit-appearance: none;
-    width: 24px;
-    height: 24px;
-    border-radius: 50%;
-    background: var(--accent);
-    cursor: pointer;
-    border: 2px solid #fff;
+
+  /* ---- metadata grid ---- */
+  .meta-grid{
+    display:grid;
+    grid-template-columns:repeat(3,1fr);
+    gap:1px;
+    background:var(--line);
+    border:1px solid var(--line);
+    border-radius:10px;
+    overflow:hidden;
+    margin-top:16px;
   }
-  .freq-readout {
-    min-width: 70px;
-    text-align: right;
-    font-size: 0.95rem;
-    font-weight: 600;
-    color: var(--accent);
+  .meta-cell{
+    background:var(--panel);
+    padding:16px 18px;
   }
-  footer { text-align: center; font-size: 0.7rem; color: var(--text-dim); }
+  .meta-label{
+    font-size:10px;
+    letter-spacing:.1em;
+    color:var(--muted);
+    margin-bottom:8px;
+  }
+  .meta-value{
+    font-size:19px;
+    color:var(--text);
+    font-weight:600;
+    line-height:1.3;
+  }
+  .meta-value.small{font-size:14px;font-weight:500;color:var(--cyan);}
+  .meta-value .unit{font-size:12px;color:var(--muted);font-weight:400;margin-left:2px;}
+  .status-pill{
+    display:inline-flex;align-items:center;gap:6px;
+    font-size:13px;font-weight:500;color:var(--muted);
+  }
+  .status-pill .dot{width:7px;height:7px;border-radius:50%;background:var(--muted);}
+  .status-pill.active{color:var(--cyan);}
+  .status-pill.active .dot{background:var(--cyan);box-shadow:0 0 6px var(--cyan);}
+  .status-pill.armed{color:var(--amber);}
+  .status-pill.armed .dot{background:var(--amber);}
+
+  /* ---- controls ---- */
+  .controls{
+    margin-top:16px;
+    background:var(--panel);
+    border:1px solid var(--line);
+    border-radius:10px;
+    padding:20px 20px 22px;
+  }
+  .row{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:16px;
+    flex-wrap:wrap;
+  }
+  .upload-label{
+    display:inline-flex;
+    align-items:center;
+    gap:10px;
+    padding:11px 16px;
+    border:1px solid var(--line);
+    border-radius:8px;
+    background:var(--panel-2);
+    color:var(--text);
+    font-size:12.5px;
+    letter-spacing:.02em;
+    cursor:pointer;
+    transition:border-color .2s ease, color .2s ease;
+    white-space:nowrap;
+  }
+  .upload-label:hover{border-color:var(--cyan-dim);color:var(--cyan);}
+  .upload-label svg{width:15px;height:15px;flex-shrink:0;}
+  input[type=file]{
+    position:absolute;
+    width:1px;height:1px;
+    opacity:0;overflow:hidden;
+    clip:rect(0 0 0 0);
+  }
+  .track-name{
+    font-size:11.5px;
+    color:var(--muted);
+    overflow:hidden;
+    text-overflow:ellipsis;
+    white-space:nowrap;
+    max-width:280px;
+  }
+  .track-name b{color:var(--text);font-weight:500;}
+
+  .slider-block{margin-top:22px;}
+  .slider-head{
+    display:flex;
+    justify-content:space-between;
+    align-items:baseline;
+    margin-bottom:12px;
+  }
+  .slider-title{
+    font-size:12.5px;
+    color:var(--text);
+    letter-spacing:.01em;
+  }
+  .slider-freq{
+    font-size:13px;
+    color:var(--cyan);
+    font-weight:600;
+  }
+  input[type=range]{
+    -webkit-appearance:none;
+    width:100%;
+    height:4px;
+    border-radius:2px;
+    background:linear-gradient(90deg, var(--cyan-dim), var(--cyan) var(--pct,30%), var(--line-soft) var(--pct,30%));
+    outline:none;
+    cursor:pointer;
+  }
+  input[type=range]::-webkit-slider-thumb{
+    -webkit-appearance:none;
+    width:16px;height:16px;
+    border-radius:50%;
+    background:var(--bg);
+    border:2px solid var(--cyan);
+    box-shadow:0 0 10px rgba(75,238,255,0.5);
+    cursor:pointer;
+    margin-top:0;
+  }
+  input[type=range]::-moz-range-thumb{
+    width:16px;height:16px;
+    border-radius:50%;
+    background:var(--bg);
+    border:2px solid var(--cyan);
+    box-shadow:0 0 10px rgba(75,238,255,0.5);
+    cursor:pointer;
+  }
+  input[type=range]::-moz-range-track{
+    height:4px;border-radius:2px;background:var(--line-soft);
+  }
+  .range-scale{
+    display:flex;
+    justify-content:space-between;
+    font-size:10px;
+    color:var(--muted);
+    margin-top:8px;
+  }
+
+  .coef-line{
+    margin-top:18px;
+    padding-top:14px;
+    border-top:1px solid var(--line-soft);
+    font-size:10.5px;
+    color:var(--muted);
+    letter-spacing:.01em;
+    display:flex;
+    flex-wrap:wrap;
+    gap:5px 14px;
+  }
+  .coef-line span b{color:var(--cyan-dim);font-weight:600;}
+
+  .gain-note{
+    margin-top:10px;
+    font-size:10.5px;
+    color:var(--muted);
+    letter-spacing:.01em;
+    display:flex;
+    align-items:center;
+    gap:8px;
+  }
+  .gain-note b{color:var(--amber);font-weight:600;}
+
+  footer{
+    margin-top:20px;
+    font-size:10.5px;
+    color:var(--muted);
+    text-align:center;
+    opacity:.7;
+  }
+
+  @media (max-width:640px){
+    .meta-grid{grid-template-columns:1fr;}
+    .signature{display:none;}
+    .track-name{max-width:170px;}
+  }
 </style>
 </head>
 <body>
-  <div class="dashboard">
-    <header>
-      <h1>Sallen-Key Lowpass Filter</h1>
-      <p>2nd-Order · Mobile Optimized</p>
-    </header>
+<div class="wrap">
 
-    <div class="curve-panel">
-      <canvas id="bodeCanvas"></canvas>
-      <button class="play-toggle" id="playBtn" disabled>
-        <svg id="iconPlay" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
-        <svg id="iconStop" viewBox="0 0 24 24" fill="currentColor" style="display:none"><rect x="6" y="6" width="12" height="12"/></svg>
+  <header>
+    <div>
+      <div class="brand-mark">DSP CONSOLE // LOWPASS-2</div>
+      <h1>Sallen-Key <span>Digital Lowpass</span></h1>
+      <div class="sub">Client-side biquad filtering of local audio via the Web Audio API. No upload, no server — decoding and DSP run entirely in this browser tab.</div>
+    </div>
+    <div class="signature">
+      <div><b>Topology</b> · Sallen-Key, unity gain</div>
+      <div><b>Transform</b> · Bilinear (z-domain)</div>
+      <div><b>Order</b> · 2nd, Q = 0.707</div>
+    </div>
+  </header>
+
+  <div class="panel">
+    <div class="panel-head">
+      <div class="panel-title">LOG MAGNITUDE RESPONSE &nbsp;<b>|H(jω)|</b> &nbsp;·&nbsp; 20 Hz – 20 kHz</div>
+      <button class="play-toggle" id="playToggle" disabled title="Load a track to enable playback" aria-label="Play or stop filtered playback">
+        <svg id="playIcon" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+        <svg id="stopIcon" viewBox="0 0 24 24" fill="currentColor" style="display:none"><rect x="6" y="6" width="12" height="12" rx="1.5"/></svg>
       </button>
-      <div class="status-badge" id="statusBadge">Audio Muted</div>
     </div>
-
-    <div class="meta-grid">
-      <div class="meta-card">
-        <div class="label">Cutoff Freq</div>
-        <div class="value" id="cutoffDisplay">250 Hz</div>
-      </div>
-      <div class="meta-card">
-        <div class="label">Filter Configuration</div>
-        <div class="value static">2nd-Order Sallen-Key LP (Q=0.707)</div>
-      </div>
-      <div class="meta-card">
-        <div class="label">Audio Stream Status</div>
-        <div class="value" id="streamStatus">No Track Loaded</div>
-      </div>
+    <div class="curve-shell">
+      <canvas id="bode" width="1200" height="560" aria-label="Bode magnitude response plot"></canvas>
+      <div class="badge" id="statusBadge"><span class="dot"></span><span id="badgeText">Audio Muted</span></div>
     </div>
-
-    <div class="controls">
-      <div class="upload-row">
-        <label class="upload-btn" for="fileInput">Upload Audio (.mp3 / .wav)</label>
-        <input type="file" id="fileInput" accept="audio/*,.mp3,.wav">
-        <span class="file-name" id="fileName">No file selected</span>
-      </div>
-
-      <div class="slider-section">
-        <label for="cutoffSlider">Adjust Cutoff for Low-Frequency Extraction</label>
-        <div class="slider-wrap">
-          <input type="range" id="cutoffSlider" min="40" max="2000" value="250" step="1">
-          <span class="freq-readout" id="sliderReadout">250 Hz</span>
-        </div>
-      </div>
-    </div>
-
-    <footer>Mobile Optimized · Web Audio API</footer>
   </div>
 
+  <div class="meta-grid">
+    <div class="meta-cell">
+      <div class="meta-label">CUTOFF FREQ</div>
+      <div class="meta-value" id="cutoffValue">250<span class="unit">Hz</span></div>
+    </div>
+    <div class="meta-cell">
+      <div class="meta-label">FILTER CONFIGURATION</div>
+      <div class="meta-value small">2nd-Order Sallen-Key LP (Q=0.707)</div>
+    </div>
+    <div class="meta-cell">
+      <div class="meta-label">AUDIO STREAM STATUS</div>
+      <div class="meta-value">
+        <span class="status-pill" id="streamStatus"><span class="dot"></span><span id="streamStatusText">No track loaded</span></span>
+      </div>
+    </div>
+  </div>
+
+  <div class="controls">
+    <div class="row">
+      <label class="upload-label" for="fileInput">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="M7 8l5-5 5 5"/><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>
+        Upload Target Audio Track (.mp3/.wav)
+      </label>
+      <input type="file" id="fileInput" accept=".mp3,.wav,audio/mpeg,audio/wav,audio/*" />
+      <div class="track-name" id="trackName">No file selected</div>
+    </div>
+
+    <div class="slider-block">
+      <div class="slider-head">
+        <div class="slider-title">Adjust Cutoff for Low-Frequency Extraction</div>
+        <div class="slider-freq" id="sliderFreqLabel">250 Hz</div>
+      </div>
+      <input type="range" id="cutoffSlider" min="40" max="2000" step="1" value="250" />
+      <div class="range-scale"><span>40 Hz</span><span>2,000 Hz</span></div>
+    </div>
+
+    <div class="coef-line" id="coefLine">
+      <span>b0=<b id="c_b0">0.000</b></span>
+      <span>b1=<b id="c_b1">0.000</b></span>
+      <span>b2=<b id="c_b2">0.000</b></span>
+      <span>a1=<b id="c_a1">0.000</b></span>
+      <span>a2=<b id="c_a2">0.000</b></span>
+    </div>
+    <div class="gain-note">Auto gain compensation: <b id="gainCompValue">+0.0 dB</b> — keeps loudness steady so the slider changes tone, not volume</div>
+  </div>
+
+  <footer>Runs entirely offline in this tab · AudioBuffer decode + BiquadFilterNode (RBJ / bilinear-transform lowpass, Q=0.707)</footer>
+</div>
+
 <script>
-(function () {
-  'use strict';
-
-  const Q = 0.707;
-  const FMIN = 20, FMAX = 20000;
-  const DB_MIN = -60, DB_MAX = 6;
-
-  const canvas = document.getElementById('bodeCanvas');
+(function(){
+  const canvas = document.getElementById('bode');
   const ctx = canvas.getContext('2d');
-  const playBtn = document.getElementById('playBtn');
-  const iconPlay = document.getElementById('iconPlay');
-  const iconStop = document.getElementById('iconStop');
-  const statusBadge = document.getElementById('statusBadge');
-  const cutoffDisplay = document.getElementById('cutoffDisplay');
-  const streamStatus = document.getElementById('streamStatus');
-  const fileInput = document.getElementById('fileInput');
-  const fileName = document.getElementById('fileName');
-  const cutoffSlider = document.getElementById('cutoffSlider');
-  const sliderReadout = document.getElementById('sliderReadout');
+  const DPR = Math.max(1, window.devicePixelRatio || 1);
 
-  let audioCtx = null;
-  let sourceNode = null;
-  let filterNode = null;
-  let gainNode = null;
-  let audioBuffer = null;
-  let isPlaying = false;
-  let cutoffHz = 250;
+  const Q = 0.707107;
+  const FMIN = 20, FMAX = 20000;
+  let sampleRateForCoeffs = 44100;
+  let cutoff = 250;
 
-  function computeBiquadCoeffs(fc, fs, q) {
-    const w0 = 2 * Math.PI * fc / fs;
+  // ---- coefficient computation (RBJ cookbook lowpass, bilinear transform) ----
+  function computeCoeffs(freq, fs){
+    const w0 = 2 * Math.PI * freq / fs;
+    const alpha = Math.sin(w0) / (2 * Q);
     const cosw0 = Math.cos(w0);
-    const sinw0 = Math.sin(w0);
-    const alpha = sinw0 / (2 * q);
-    const b0 = (1 - cosw0) / 2;
-    const b1 = 1 - cosw0;
-    const b2 = (1 - cosw0) / 2;
-    const a0 = 1 + alpha;
-    const a1 = -2 * cosw0;
-    const a2 = 1 - alpha;
+    let b0 = (1 - cosw0) / 2;
+    let b1 = 1 - cosw0;
+    let b2 = (1 - cosw0) / 2;
+    let a0 = 1 + alpha;
+    let a1 = -2 * cosw0;
+    let a2 = 1 - alpha;
     return { b0: b0/a0, b1: b1/a0, b2: b2/a0, a1: a1/a0, a2: a2/a0 };
   }
 
-  function magnitudeDb(f, c, fs) {
-    const w = 2 * Math.PI * f / fs;
-    const cosw = Math.cos(w), cos2w = Math.cos(2*w);
-    const sinw = Math.sin(w), sin2w = Math.sin(2*w);
-    const reN = c.b0 + c.b1*cosw + c.b2*cos2w;
-    const imN = -c.b1*sinw - c.b2*sin2w;
-    const reD = 1 + c.a1*cosw + c.a2*cos2w;
-    const imD = -c.a1*sinw - c.a2*sin2w;
-    const mag2 = (reN*reN + imN*imN) / (reD*reD + imD*imD);
-    return 10 * Math.log10(Math.max(mag2, 1e-30));
+  function magnitudeDb(coef, freq, fs){
+    const w = 2 * Math.PI * freq / fs;
+    const cos1 = Math.cos(w), sin1 = Math.sin(w);
+    const cos2 = Math.cos(2*w), sin2 = Math.sin(2*w);
+    // numerator: b0 + b1*e^-jw + b2*e^-2jw
+    const numRe = coef.b0 + coef.b1*cos1 + coef.b2*cos2;
+    const numIm = -coef.b1*sin1 - coef.b2*sin2;
+    // denominator: 1 + a1*e^-jw + a2*e^-2jw
+    const denRe = 1 + coef.a1*cos1 + coef.a2*cos2;
+    const denIm = -coef.a1*sin1 - coef.a2*sin2;
+    const numMag = Math.sqrt(numRe*numRe + numIm*numIm);
+    const denMag = Math.sqrt(denRe*denRe + denIm*denIm);
+    const mag = numMag / denMag;
+    return 20 * Math.log10(Math.max(mag, 1e-8));
   }
 
-  function drawBode() {
-    const dpr = window.devicePixelRatio || 1;
-    const w = canvas.clientWidth || 900;
-    const h = canvas.clientHeight || 220;
-    canvas.width = w * dpr;
-    canvas.height = h * dpr;
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  function freqToX(f, w){
+    const lx = Math.log10(FMIN), hx = Math.log10(FMAX);
+    return ((Math.log10(f) - lx) / (hx - lx)) * w;
+  }
+  function dbToY(db, h, padTop, padBottom){
+    const top = 8, bottom = -48; // dB range shown
+    const usable = h - padTop - padBottom;
+    const clamped = Math.min(top, Math.max(bottom, db));
+    return padTop + (top - clamped) / (top - bottom) * usable;
+  }
 
-    const padL = 46, padR = 12, padT = 20, padB = 30;
-    const plotW = w - padL - padR;
-    const plotH = h - padT - padB;
+  function drawBode(){
+    const cssW = canvas.clientWidth, cssH = canvas.clientHeight;
+    canvas.width = cssW * DPR;
+    canvas.height = cssH * DPR;
+    ctx.setTransform(DPR,0,0,DPR,0,0);
+    const w = cssW, h = cssH;
+    const padTop = 14, padBottom = 26, padLeft = 4, padRight = 4;
 
-    ctx.fillStyle = '#141722';
-    ctx.fillRect(0, 0, w, h);
+    ctx.clearRect(0,0,w,h);
 
-    ctx.strokeStyle = '#252a3d';
+    // gridlines - vertical (decades)
+    ctx.strokeStyle = 'rgba(139,145,172,0.14)';
     ctx.lineWidth = 1;
-    [20,50,100,200,500,1000,2000,5000,10000,20000].forEach(f => {
-      if (f < FMIN || f > FMAX) return;
-      const x = padL + plotW * (Math.log10(f) - Math.log10(FMIN)) / (Math.log10(FMAX) - Math.log10(FMIN));
-      ctx.beginPath(); ctx.moveTo(x, padT); ctx.lineTo(x, padT + plotH); ctx.stroke();
-    });
-    for (let db = DB_MIN; db <= DB_MAX; db += 12) {
-      const y = padT + plotH * (1 - (db - DB_MIN) / (DB_MAX - DB_MIN));
-      ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(padL + plotW, y); ctx.stroke();
-    }
-
-    ctx.fillStyle = '#6a7388';
-    ctx.font = '10px system-ui,sans-serif';
-    ctx.textAlign = 'center';
-    [100,1000,10000].forEach(f => {
-      const x = padL + plotW * (Math.log10(f) - Math.log10(FMIN)) / (Math.log10(FMAX) - Math.log10(FMIN));
-      ctx.fillText(f >= 1000 ? (f/1000)+'k' : f, x, h - 10);
+    ctx.font = '10px JetBrains Mono, monospace';
+    ctx.fillStyle = 'rgba(139,145,172,0.65)';
+    const decades = [20,50,100,200,500,1000,2000,5000,10000,20000];
+    decades.forEach(f=>{
+      const x = freqToX(f, w);
+      ctx.beginPath();
+      ctx.moveTo(x, padTop);
+      ctx.lineTo(x, h - padBottom);
+      ctx.stroke();
+      const label = f>=1000 ? (f/1000)+'k' : f+'';
+      ctx.fillText(label, x-10, h-8);
     });
 
-    const fs = (audioCtx && audioCtx.sampleRate) ? audioCtx.sampleRate : 44100;
-    const coeffs = computeBiquadCoeffs(cutoffHz, fs, Q);
+    // horizontal gridlines (dB)
+    [0,-10,-20,-30,-40].forEach(db=>{
+      const y = dbToY(db, h, padTop, padBottom);
+      ctx.beginPath();
+      ctx.moveTo(padLeft, y);
+      ctx.lineTo(w-padRight, y);
+      ctx.strokeStyle = db===0 ? 'rgba(75,238,255,0.18)' : 'rgba(139,145,172,0.10)';
+      ctx.stroke();
+      ctx.fillStyle = 'rgba(139,145,172,0.55)';
+      ctx.fillText(db+'dB', padLeft+2, y-3);
+    });
 
+    // response curve
+    const coef = computeCoeffs(cutoff, sampleRateForCoeffs);
+    const steps = 260;
     ctx.beginPath();
-    ctx.strokeStyle = '#00e5ff';
-    ctx.lineWidth = 2;
-    const steps = 360;
-    for (let i = 0; i <= steps; i++) {
-      const t = i / steps;
-      const f = Math.pow(10, Math.log10(FMIN) + t * (Math.log10(FMAX) - Math.log10(FMIN)));
-      const db = magnitudeDb(f, coeffs, fs);
-      const x = padL + plotW * t;
-      const y = padT + plotH * (1 - (Math.max(DB_MIN, Math.min(DB_MAX, db)) - DB_MIN) / (DB_MAX - DB_MIN));
-      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    for(let i=0;i<=steps;i++){
+      const logF = Math.log10(FMIN) + (i/steps) * (Math.log10(FMAX)-Math.log10(FMIN));
+      const f = Math.pow(10, logF);
+      const db = magnitudeDb(coef, f, sampleRateForCoeffs);
+      const x = freqToX(f, w);
+      const y = dbToY(db, h, padTop, padBottom);
+      if(i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
     }
+    // glow pass
+    ctx.strokeStyle = 'rgba(75,238,255,0.25)';
+    ctx.lineWidth = 6;
+    ctx.lineJoin = 'round';
+    ctx.stroke();
+    // crisp pass
+    ctx.strokeStyle = '#4beeff';
+    ctx.lineWidth = 2;
     ctx.stroke();
 
-    const tCut = (Math.log10(cutoffHz) - Math.log10(FMIN)) / (Math.log10(FMAX) - Math.log10(FMIN));
-    const xCut = padL + plotW * tCut;
-    const dbCut = magnitudeDb(cutoffHz, coeffs, fs);
-    const yCut = padT + plotH * (1 - (Math.max(DB_MIN, Math.min(DB_MAX, dbCut)) - DB_MIN) / (DB_MAX - DB_MIN));
+    // fill under curve
+    ctx.lineTo(freqToX(FMAX,w), h-padBottom);
+    ctx.lineTo(freqToX(FMIN,w), h-padBottom);
+    ctx.closePath();
+    const grad = ctx.createLinearGradient(0,padTop,0,h-padBottom);
+    grad.addColorStop(0,'rgba(75,238,255,0.14)');
+    grad.addColorStop(1,'rgba(75,238,255,0.0)');
+    ctx.fillStyle = grad;
+    ctx.fill();
 
-    ctx.strokeStyle = 'rgba(255,64,129,0.45)';
-    ctx.setLineDash([4,4]);
-    ctx.beginPath(); ctx.moveTo(xCut, padT); ctx.lineTo(xCut, padT + plotH); ctx.stroke();
+    // tracker dot at cutoff
+    const dbAtCutoff = magnitudeDb(coef, cutoff, sampleRateForCoeffs);
+    const dx = freqToX(cutoff, w);
+    const dy = dbToY(dbAtCutoff, h, padTop, padBottom);
+    ctx.beginPath();
+    ctx.arc(dx,dy,9,0,Math.PI*2);
+    ctx.fillStyle = 'rgba(255,95,209,0.16)';
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(dx,dy,4.5,0,Math.PI*2);
+    ctx.fillStyle = '#ff5fd1';
+    ctx.shadowColor = '#ff5fd1';
+    ctx.shadowBlur = 12;
+    ctx.fill();
+    ctx.shadowBlur = 0;
+
+    // vertical cutoff guide
+    ctx.beginPath();
+    ctx.moveTo(dx, padTop);
+    ctx.lineTo(dx, h-padBottom);
+    ctx.strokeStyle = 'rgba(255,95,209,0.25)';
+    ctx.setLineDash([3,4]);
+    ctx.lineWidth = 1;
+    ctx.stroke();
     ctx.setLineDash([]);
 
-    ctx.beginPath();
-    ctx.arc(xCut, yCut, 5, 0, Math.PI*2);
-    ctx.fillStyle = '#ff4081';
-    ctx.fill();
-    ctx.strokeStyle = '#fff';
-    ctx.lineWidth = 1.5;
-    ctx.stroke();
+    // update coefficient readout
+    document.getElementById('c_b0').textContent = coef.b0.toFixed(4);
+    document.getElementById('c_b1').textContent = coef.b1.toFixed(4);
+    document.getElementById('c_b2').textContent = coef.b2.toFixed(4);
+    document.getElementById('c_a1').textContent = coef.a1.toFixed(4);
+    document.getElementById('c_a2').textContent = coef.a2.toFixed(4);
   }
-
-  function ensureCtx() {
-    if (!audioCtx) {
-      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    }
-    return audioCtx;
-  }
-
-  function getMakeupGain(fc) {
-    const ratio = Math.max(0.12, Math.min(1, fc / 1000));
-    return (1 / Math.sqrt(ratio)) * 1.1;   // 稍微提高整体音量
-  }
-
-  function buildGraph() {
-    if (!audioBuffer) return;
-    const ctx = ensureCtx();
-
-    if (sourceNode) {
-      try { sourceNode.stop(); } catch(e){}
-      try { sourceNode.disconnect(); } catch(e){}
-    }
-    if (filterNode) try { filterNode.disconnect(); } catch(e){}
-    if (gainNode) try { gainNode.disconnect(); } catch(e){}
-
-    sourceNode = ctx.createBufferSource();
-    sourceNode.buffer = audioBuffer;
-    sourceNode.loop = true;
-
-    filterNode = ctx.createBiquadFilter();
-    filterNode.type = 'lowpass';
-    filterNode.frequency.value = cutoffHz;
-    filterNode.Q.value = Q;
-
-    gainNode = ctx.createGain();
-    gainNode.gain.value = getMakeupGain(cutoffHz);
-
-    sourceNode.connect(filterNode);
-    filterNode.connect(gainNode);
-    gainNode.connect(ctx.destination);
-  }
-
-  // ========== 手机关键修复：播放按钮点击时强制 resume ==========
-  async function startPlayback() {
-    if (!audioBuffer) return;
-
-    const ctx = ensureCtx();
-
-    // 必须在用户手势里 resume，这是手机没声音的最常见原因
-    if (ctx.state === 'suspended') {
-      try {
-        await ctx.resume();
-      } catch (e) {
-        console.warn('resume failed', e);
-      }
-    }
-
-    buildGraph();
-    sourceNode.start(0);
-    isPlaying = true;
-
-    iconPlay.style.display = 'none';
-    iconStop.style.display = 'block';
-    statusBadge.textContent = 'Filtering Live Output';
-    statusBadge.classList.add('live');
-    streamStatus.textContent = 'Playing · Filtered';
-  }
-
-  function stopPlayback() {
-    if (sourceNode) {
-      try { sourceNode.stop(); } catch(e){}
-      try { sourceNode.disconnect(); } catch(e){}
-      sourceNode = null;
-    }
-    isPlaying = false;
-    iconPlay.style.display = 'block';
-    iconStop.style.display = 'none';
-    statusBadge.textContent = 'Audio Muted';
-    statusBadge.classList.remove('live');
-    streamStatus.textContent = audioBuffer ? 'Ready · Paused' : 'No Track Loaded';
-  }
-
-  function formatFreq(hz) {
-    return hz >= 1000 ? (hz/1000).toFixed(hz >= 10000 ? 1 : 2) + ' kHz' : Math.round(hz) + ' Hz';
-  }
-
-  function updateCutoff(val) {
-    cutoffHz = +val;
-    cutoffDisplay.textContent = formatFreq(cutoffHz);
-    sliderReadout.textContent = formatFreq(cutoffHz);
-
-    if (filterNode && audioCtx) {
-      const now = audioCtx.currentTime;
-      filterNode.frequency.setTargetAtTime(cutoffHz, now, 0.02);
-      filterNode.Q.setTargetAtTime(Q, now, 0.02);
-    }
-    if (gainNode && audioCtx) {
-      gainNode.gain.setTargetAtTime(getMakeupGain(cutoffHz), audioCtx.currentTime, 0.04);
-    }
-    drawBode();
-  }
-
-  cutoffSlider.addEventListener('input', e => updateCutoff(e.target.value));
-
-  playBtn.addEventListener('click', async () => {
-    if (!audioBuffer) return;
-    if (isPlaying) {
-      stopPlayback();
-    } else {
-      await startPlayback();   // 关键：用 async 确保 resume 完成
-    }
-  });
-
-  fileInput.addEventListener('change', async e => {
-    const file = e.target.files[0];
-    if (!file) return;
-
-    fileName.textContent = file.name;
-    streamStatus.textContent = 'Decoding…';
-    playBtn.disabled = true;
-    stopPlayback();
-
-    try {
-      const arrayBuf = await file.arrayBuffer();
-      const ctx = ensureCtx();
-      // 尝试提前 resume（有些手机需要）
-      if (ctx.state === 'suspended') {
-        try { await ctx.resume(); } catch(e){}
-      }
-      audioBuffer = await ctx.decodeAudioData(arrayBuf.slice(0));
-      streamStatus.textContent = 'Ready · Paused';
-      playBtn.disabled = false;
-      drawBode();
-    } catch (err) {
-      console.error(err);
-      streamStatus.textContent = 'Decode Error';
-      fileName.textContent = 'Failed';
-      audioBuffer = null;
-      playBtn.disabled = true;
-    }
-  });
 
   window.addEventListener('resize', drawBode);
-  updateCutoff(250);
+
+  // ---- UI: cutoff readouts ----
+  const cutoffValueEl = document.getElementById('cutoffValue');
+  const sliderFreqLabel = document.getElementById('sliderFreqLabel');
+  const slider = document.getElementById('cutoffSlider');
+
+  function fmtFreq(f){
+    return f >= 1000 ? (f/1000).toFixed(2).replace(/0$/,'').replace(/\.$/,'') + ' kHz' : Math.round(f) + ' Hz';
+  }
+  function updateFreqDisplays(){
+    const parts = fmtFreq(cutoff).split(' ');
+    cutoffValueEl.innerHTML = parts[0] + '<span class="unit">' + parts[1] + '</span>';
+    sliderFreqLabel.textContent = fmtFreq(cutoff);
+    const pct = ((cutoff-40)/(2000-40))*100;
+    slider.style.setProperty('--pct', pct+'%');
+  }
+  updateFreqDisplays();
+  (function initGainNote(){
+    const el = document.getElementById('gainCompValue');
+    if(el){
+      const db = Math.min(9, Math.max(0, Math.log2(2000/cutoff) * 2.2));
+      el.textContent = '+' + db.toFixed(1) + ' dB';
+    }
+  })();
+
+  slider.addEventListener('input', ()=>{
+    cutoff = parseFloat(slider.value);
+    updateFreqDisplays();
+    drawBode();
+    if(biquadFilter){
+      biquadFilter.frequency.setTargetAtTime(cutoff, audioCtx.currentTime, 0.01);
+      applyCompensation(cutoff);
+    } else {
+      // context not created yet (no file loaded) — still reflect the value live
+      const el = document.getElementById('gainCompValue');
+      if(el) el.textContent = (computeCompensationDb(cutoff) >= 0 ? '+' : '') + computeCompensationDb(cutoff).toFixed(1) + ' dB';
+    }
+  });
+
   drawBode();
+
+  // ---- Web Audio setup ----
+  let audioCtx = null;
+  let biquadFilter = null;
+  let makeupGain = null;
+  let compressor = null;
+  let sourceNode = null;
+  let audioBuffer = null;
+  let isPlaying = false;
+  let playStartTime = 0;
+  let playOffset = 0;
+
+  // A 2nd-order lowpass removes real signal energy as the cutoff drops, which
+  // reads to the ear as "quieter" rather than "duller". This compensates with
+  // makeup gain (roughly +2.2 dB per octave below the 2 kHz ceiling, capped at
+  // +9 dB) so loudness stays steady and what you hear is the timbral change.
+  const GAIN_DB_PER_OCTAVE = 2.2;
+  const GAIN_DB_MAX = 9;
+  function computeCompensationDb(freq){
+    const octavesBelowCeiling = Math.log2(2000 / freq);
+    return Math.min(GAIN_DB_MAX, Math.max(0, octavesBelowCeiling * GAIN_DB_PER_OCTAVE));
+  }
+  function applyCompensation(freq){
+    const db = computeCompensationDb(freq);
+    const linear = Math.pow(10, db / 20);
+    if(makeupGain){
+      makeupGain.gain.setTargetAtTime(linear, audioCtx.currentTime, 0.01);
+    }
+    const el = document.getElementById('gainCompValue');
+    if(el) el.textContent = (db >= 0 ? '+' : '') + db.toFixed(1) + ' dB';
+  }
+
+  const fileInput = document.getElementById('fileInput');
+  const trackName = document.getElementById('trackName');
+  const playToggle = document.getElementById('playToggle');
+  const playIcon = document.getElementById('playIcon');
+  const stopIcon = document.getElementById('stopIcon');
+  const statusBadge = document.getElementById('statusBadge');
+  const badgeText = document.getElementById('badgeText');
+  const streamStatus = document.getElementById('streamStatus');
+  const streamStatusText = document.getElementById('streamStatusText');
+
+  function ensureContext(){
+    if(!audioCtx){
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      sampleRateForCoeffs = audioCtx.sampleRate;
+      biquadFilter = audioCtx.createBiquadFilter();
+      biquadFilter.type = 'lowpass';
+      biquadFilter.frequency.value = cutoff;
+      biquadFilter.Q.value = Q;
+
+      makeupGain = audioCtx.createGain();
+      makeupGain.gain.value = Math.pow(10, computeCompensationDb(cutoff) / 20);
+
+      // Safety limiter: makeup gain can push transients close to 0 dBFS on
+      // already-loud source material, so catch peaks transparently.
+      compressor = audioCtx.createDynamicsCompressor();
+      compressor.threshold.value = -6;
+      compressor.knee.value = 6;
+      compressor.ratio.value = 4;
+      compressor.attack.value = 0.003;
+      compressor.release.value = 0.15;
+
+      biquadFilter.connect(makeupGain);
+      makeupGain.connect(compressor);
+      compressor.connect(audioCtx.destination);
+
+      applyCompensation(cutoff);
+      drawBode();
+    }
+  }
+
+  function setStreamStatus(mode){
+    streamStatus.className = 'status-pill' + (mode==='playing' ? ' active' : mode==='ready' ? ' armed' : '');
+    streamStatusText.textContent =
+      mode==='playing' ? 'Filtering — playback live' :
+      mode==='ready' ? 'Decoded — ready to play' :
+      mode==='stopped' ? 'Stopped' : 'No track loaded';
+  }
+
+  function setBadge(live){
+    statusBadge.className = 'badge' + (live ? ' live' : '');
+    badgeText.textContent = live ? 'Filtering Live Output' : 'Audio Muted';
+  }
+
+  fileInput.addEventListener('change', async (e)=>{
+    const file = e.target.files[0];
+    if(!file) return;
+    trackName.innerHTML = 'Decoding <b>' + file.name + '</b>…';
+    ensureContext();
+    stopPlayback();
+    try{
+      const arrayBuffer = await file.arrayBuffer();
+      audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
+      trackName.innerHTML = '<b>' + file.name + '</b> · ' + audioBuffer.duration.toFixed(1) + 's';
+      playToggle.disabled = false;
+      playOffset = 0;
+      setStreamStatus('ready');
+      setBadge(false);
+    }catch(err){
+      trackName.textContent = 'Could not decode this file — try an MP3 or WAV.';
+      playToggle.disabled = true;
+      setStreamStatus('idle');
+    }
+  });
+
+  function startPlayback(){
+    if(!audioBuffer) return;
+    ensureContext();
+    if(audioCtx.state === 'suspended') audioCtx.resume();
+    sourceNode = audioCtx.createBufferSource();
+    sourceNode.buffer = audioBuffer;
+    sourceNode.connect(biquadFilter);
+    sourceNode.onended = ()=>{
+      if(isPlaying){
+        // natural end of track
+        isPlaying = false;
+        playOffset = 0;
+        updateToggleUI();
+        setStreamStatus('ready');
+        setBadge(false);
+      }
+    };
+    const offset = playOffset % audioBuffer.duration;
+    sourceNode.start(0, offset);
+    playStartTime = audioCtx.currentTime - offset;
+    isPlaying = true;
+    updateToggleUI();
+    setStreamStatus('playing');
+    setBadge(true);
+  }
+
+  function stopPlayback(){
+    if(sourceNode){
+      try{
+        sourceNode.onended = null;
+        sourceNode.stop();
+      }catch(e){}
+      sourceNode.disconnect();
+      sourceNode = null;
+    }
+    if(isPlaying && audioCtx){
+      playOffset = (audioCtx.currentTime - playStartTime);
+    }
+    isPlaying = false;
+    updateToggleUI();
+    if(audioBuffer){ setStreamStatus('ready'); }
+    setBadge(false);
+  }
+
+  function updateToggleUI(){
+    playToggle.classList.toggle('on', isPlaying);
+    playIcon.style.display = isPlaying ? 'none' : 'block';
+    stopIcon.style.display = isPlaying ? 'block' : 'none';
+    playToggle.setAttribute('aria-label', isPlaying ? 'Stop filtered playback' : 'Play filtered audio');
+  }
+
+  playToggle.addEventListener('click', ()=>{
+    if(!audioBuffer) return;
+    if(isPlaying){ stopPlayback(); }
+    else { startPlayback(); }
+  });
+
+  // keep tracker dot / curve responsive even before audio context exists
+  setInterval(()=>{ /* placeholder for potential live-meter extension */ }, 500);
 })();
 </script>
 </body>
