@@ -307,6 +307,30 @@
     margin-top:8px;
   }
 
+  .q-presets{
+    display:flex;
+    flex-wrap:wrap;
+    gap:8px;
+    margin-top:10px;
+  }
+  .q-chip{
+    font-size:10.5px;
+    letter-spacing:.02em;
+    color:var(--muted);
+    background:var(--panel-2);
+    border:1px solid var(--line);
+    border-radius:14px;
+    padding:5px 11px;
+    cursor:pointer;
+    transition:border-color .15s ease, color .15s ease, background .15s ease;
+  }
+  .q-chip:hover{border-color:var(--cyan-dim);color:var(--text);}
+  .q-chip.active{
+    border-color:var(--magenta);
+    color:var(--magenta);
+    background:rgba(255,95,209,0.08);
+  }
+
   .coef-line{
     margin-top:18px;
     padding-top:14px;
@@ -358,7 +382,7 @@
     <div class="signature">
       <div><b>Topology</b> · Sallen-Key, unity gain</div>
       <div><b>Transform</b> · Bilinear (z-domain)</div>
-      <div><b>Order</b> · 2nd, Q = 0.707</div>
+      <div><b>Order</b> · 2nd, Q = <span id="headerQValue">0.707</span></div>
     </div>
   </header>
 
@@ -383,7 +407,7 @@
     </div>
     <div class="meta-cell">
       <div class="meta-label">FILTER CONFIGURATION</div>
-      <div class="meta-value small">2nd-Order Sallen-Key LP (Q=0.707)</div>
+      <div class="meta-value small" id="filterConfigValue">2nd-Order Sallen-Key LP (Q=0.707)</div>
     </div>
     <div class="meta-cell">
       <div class="meta-label">AUDIO STREAM STATUS</div>
@@ -412,6 +436,22 @@
       <div class="range-scale"><span>40 Hz</span><span>2,000 Hz</span></div>
     </div>
 
+    <div class="slider-block">
+      <div class="slider-head">
+        <div class="slider-title">Filter Q — Damping / Resonance (Sallen-Key feedback ratio)</div>
+        <div class="slider-freq" id="qValueLabel">Q = 0.707</div>
+      </div>
+      <input type="range" id="qSlider" min="0.3" max="5" step="0.01" value="0.707107" />
+      <div class="range-scale"><span>0.3 (overdamped)</span><span>5.0 (resonant peak)</span></div>
+      <div class="q-presets" id="qPresets">
+        <span class="q-chip" data-q="0.577">Bessel 0.577</span>
+        <span class="q-chip active" data-q="0.707107">Butterworth 0.707</span>
+        <span class="q-chip" data-q="1.0">Chebyshev-ish 1.0</span>
+        <span class="q-chip" data-q="2.0">Resonant 2.0</span>
+        <span class="q-chip" data-q="5.0">Peaky 5.0</span>
+      </div>
+    </div>
+
     <div class="coef-line" id="coefLine">
       <span>b0=<b id="c_b0">0.000</b></span>
       <span>b1=<b id="c_b1">0.000</b></span>
@@ -431,7 +471,7 @@
   const ctx = canvas.getContext('2d');
   const DPR = Math.max(1, window.devicePixelRatio || 1);
 
-  const Q = 0.707107;
+  let Q = 0.707107;
   const FMIN = 20, FMAX = 20000;
   let sampleRateForCoeffs = 44100;
   let cutoff = 250;
@@ -471,7 +511,7 @@
     return ((Math.log10(f) - lx) / (hx - lx)) * w;
   }
   function dbToY(db, h, padTop, padBottom){
-    const top = 8, bottom = -48; // dB range shown
+    const top = 22, bottom = -48; // dB range shown — extra headroom for high-Q resonant peaks
     const usable = h - padTop - padBottom;
     const clamped = Math.min(top, Math.max(bottom, db));
     return padTop + (top - clamped) / (top - bottom) * usable;
@@ -504,7 +544,7 @@
     });
 
     // horizontal gridlines (dB)
-    [0,-10,-20,-30,-40].forEach(db=>{
+    [20,10,0,-10,-20,-30,-40].forEach(db=>{
       const y = dbToY(db, h, padTop, padBottom);
       ctx.beginPath();
       ctx.moveTo(padLeft, y);
@@ -621,6 +661,54 @@
     }
   });
 
+  // ---- Q control: changes the biquad coefficients directly (alpha = sin(w0)/(2Q)) ----
+  const qSlider = document.getElementById('qSlider');
+  const qValueLabel = document.getElementById('qValueLabel');
+  const filterConfigValue = document.getElementById('filterConfigValue');
+  const qPresets = document.getElementById('qPresets');
+
+  const headerQValue = document.getElementById('headerQValue');
+
+  function updateQDisplays(){
+    const qStr = Q.toFixed(3).replace(/0+$/,'').replace(/\.$/,'');
+    qValueLabel.textContent = 'Q = ' + qStr;
+    filterConfigValue.textContent = '2nd-Order Sallen-Key LP (Q=' + qStr + ')';
+    if(headerQValue) headerQValue.textContent = qStr;
+    // highlight matching preset chip, if any, else clear
+    const chips = qPresets.querySelectorAll('.q-chip');
+    let matched = false;
+    chips.forEach(chip=>{
+      const isMatch = Math.abs(parseFloat(chip.dataset.q) - Q) < 0.001;
+      chip.classList.toggle('active', isMatch);
+      if(isMatch) matched = true;
+    });
+  }
+
+  function setQ(newQ){
+    Q = Math.min(5, Math.max(0.3, newQ));
+    qSlider.value = Q;
+    const qPct = ((Q - 0.3) / (5 - 0.3)) * 100;
+    qSlider.style.setProperty('--pct', qPct + '%');
+    updateQDisplays();
+    drawBode();
+    if(biquadFilter){
+      biquadFilter.Q.setTargetAtTime(Q, audioCtx.currentTime, 0.01);
+    }
+  }
+
+  qSlider.addEventListener('input', ()=>{
+    setQ(parseFloat(qSlider.value));
+  });
+
+  qPresets.addEventListener('click', (e)=>{
+    const chip = e.target.closest('.q-chip');
+    if(!chip) return;
+    setQ(parseFloat(chip.dataset.q));
+  });
+
+  updateQDisplays();
+  qSlider.style.setProperty('--pct', (((Q - 0.3) / (5 - 0.3)) * 100) + '%');
+
   drawBode();
 
   // ---- Web Audio setup ----
@@ -676,14 +764,16 @@
       makeupGain = audioCtx.createGain();
       makeupGain.gain.value = Math.pow(10, computeCompensationDb(cutoff) / 20);
 
-      // Safety limiter: makeup gain can push transients close to 0 dBFS on
-      // already-loud source material, so catch peaks transparently.
+      // Safety limiter only — this must not act as a general compressor, or
+      // it will squash the audible resonance a high Q adds at the cutoff
+      // frequency. It should stay silent until a peak is about to clip, then
+      // catch it fast and let go fast.
       compressor = audioCtx.createDynamicsCompressor();
-      compressor.threshold.value = -6;
-      compressor.knee.value = 6;
-      compressor.ratio.value = 4;
-      compressor.attack.value = 0.003;
-      compressor.release.value = 0.15;
+      compressor.threshold.value = -1;
+      compressor.knee.value = 0;
+      compressor.ratio.value = 20;
+      compressor.attack.value = 0.001;
+      compressor.release.value = 0.08;
 
       biquadFilter.connect(makeupGain);
       makeupGain.connect(compressor);
