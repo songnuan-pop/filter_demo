@@ -2,6 +2,6 @@
 
 The repository includes pre-loaded samples in `/audio_samples/` to demonstrate the **Sallen-Key Low-Pass Filter**:
 
-1. `01_noisegate_1200-6800hz.mp3`
+1. `01_noisegate_1200-6800hz.wav`
 2. `02_jazz-drums-solo-120-bpm.mp3`
 3. `03_drum-amp-bass.mp3`
