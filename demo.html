@@ -236,6 +236,31 @@
   }
   .upload-label:hover{border-color:var(--cyan-dim);color:var(--cyan);}
   .upload-label svg{width:15px;height:15px;flex-shrink:0;}
+
+  .sample-select{
+    display:inline-flex;
+    align-items:center;
+    gap:9px;
+    padding:11px 14px;
+    border:1px solid var(--line);
+    border-radius:8px;
+    background:var(--panel-2);
+    color:var(--text);
+    font-family:inherit;
+    font-size:12.5px;
+    letter-spacing:.02em;
+    cursor:pointer;
+    transition:border-color .2s ease, color .2s ease;
+    appearance:none;
+    -webkit-appearance:none;
+    background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%238891ac' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><polyline points='6 9 12 15 18 9'/></svg>");
+    background-repeat:no-repeat;
+    background-position:right 12px center;
+    background-size:13px;
+    padding-right:32px;
+  }
+  .sample-select:hover{border-color:var(--cyan-dim);color:var(--cyan);}
+  .sample-select option{background:var(--panel-2);color:var(--text);}
   input[type=file]{
     position:absolute;
     width:1px;height:1px;
@@ -419,6 +444,12 @@
 
   <div class="controls">
     <div class="row">
+      <select class="sample-select" id="sampleSelect" aria-label="Choose a sample track">
+        <option value="">Choose a sample track…</option>
+        <option value="audio_samples/01_noisegate_1200-6800hz.mp3">01 · Noise Gate 1200–6800Hz</option>
+        <option value="audio_samples/02_jazz-drums-solo-120-bpm.mp3">02 · Jazz Drums Solo (120 BPM)</option>
+        <option value="audio_samples/03_drum-amp-bass.mp3">03 · Drum + Bass Amp</option>
+      </select>
       <label class="upload-label" for="fileInput">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="M7 8l5-5 5 5"/><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>
         Upload Target Audio Track (.mp3/.wav)
@@ -743,6 +774,7 @@
   }
 
   const fileInput = document.getElementById('fileInput');
+  const sampleSelect = document.getElementById('sampleSelect');
   const trackName = document.getElementById('trackName');
   const playToggle = document.getElementById('playToggle');
   const playIcon = document.getElementById('playIcon');
@@ -797,24 +829,51 @@
     badgeText.textContent = live ? 'Filtering Live Output' : 'Audio Muted';
   }
 
-  fileInput.addEventListener('change', async (e)=>{
-    const file = e.target.files[0];
-    if(!file) return;
-    trackName.innerHTML = 'Decoding <b>' + file.name + '</b>…';
+  // Shared decode path for both an uploaded File and an ArrayBuffer fetched
+  // from a local sample under /audio_samples. `label` is what's shown in the
+  // track-name readout.
+  async function loadAudioBuffer(arrayBufferPromise, label){
+    trackName.innerHTML = 'Decoding <b>' + label + '</b>…';
     ensureContext();
     stopPlayback();
     try{
-      const arrayBuffer = await file.arrayBuffer();
+      const arrayBuffer = await arrayBufferPromise;
       audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
-      trackName.innerHTML = '<b>' + file.name + '</b> · ' + audioBuffer.duration.toFixed(1) + 's';
+      trackName.innerHTML = '<b>' + label + '</b> · ' + audioBuffer.duration.toFixed(1) + 's';
       playToggle.disabled = false;
       playOffset = 0;
       setStreamStatus('ready');
       setBadge(false);
+      return true;
     }catch(err){
-      trackName.textContent = 'Could not decode this file — try an MP3 or WAV.';
+      trackName.textContent = 'Could not decode this track — try an MP3 or WAV.';
       playToggle.disabled = true;
       setStreamStatus('idle');
+      return false;
+    }
+  }
+
+  fileInput.addEventListener('change', async (e)=>{
+    const file = e.target.files[0];
+    if(!file) return;
+    sampleSelect.value = ''; // custom upload supersedes the dropdown choice
+    await loadAudioBuffer(file.arrayBuffer(), file.name);
+  });
+
+  sampleSelect.addEventListener('change', async (e)=>{
+    const path = e.target.value;
+    if(!path) return;
+    const label = e.target.options[e.target.selectedIndex].text;
+    fileInput.value = ''; // dropdown choice supersedes any previously-picked file
+    const ok = await loadAudioBuffer(
+      fetch(path).then(res=>{
+        if(!res.ok) throw new Error('fetch failed: ' + res.status);
+        return res.arrayBuffer();
+      }),
+      label
+    );
+    if(!ok){
+      trackName.innerHTML = 'Could not load <b>' + label + '</b> — check that /audio_samples/ sits next to this HTML file (and that the page is served over http/https, not opened directly as a local file).';
     }
   });
 
