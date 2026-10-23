@@ -493,10 +493,29 @@
     <div class="gain-note">Auto gain compensation: <b id="gainCompValue">+0.0 dB</b> — keeps loudness steady so the slider changes tone, not volume</div>
   </div>
 
-  <footer>Runs entirely offline in this tab · AudioBuffer decode + BiquadFilterNode (RBJ / bilinear-transform lowpass, Q=0.707)</footer>
+  <footer>build 1023-a · Runs entirely offline in this tab · AudioBuffer decode + BiquadFilterNode (RBJ / bilinear-transform lowpass, Q=0.707)</footer>
 </div>
 
 <script>
+// Surface any script error on the page so failures are never silent.
+window.addEventListener('error', function(ev){
+  var el = document.getElementById('trackName');
+  if(el){
+    el.style.color = 'var(--amber)';
+    el.style.whiteSpace = 'normal';
+    el.style.maxWidth = 'none';
+    el.textContent = 'Script error: ' + (ev.message || 'unknown') + (ev.lineno ? ' (line ' + ev.lineno + ')' : '');
+  }
+});
+window.addEventListener('unhandledrejection', function(ev){
+  var el = document.getElementById('trackName');
+  if(el){
+    el.style.color = 'var(--amber)';
+    el.style.whiteSpace = 'normal';
+    el.style.maxWidth = 'none';
+    el.textContent = 'Error: ' + (ev.reason && ev.reason.message ? ev.reason.message : ev.reason);
+  }
+});
 (function(){
   const canvas = document.getElementById('bode');
   const ctx = canvas.getContext('2d');
@@ -723,7 +742,7 @@
     updateQDisplays();
     drawBode();
     if(biquadFilter){
-      biquadFilter.Q.setTargetAtTime(Q, audioCtx.currentTime, 0.01);
+      biquadFilter.Q.setTargetAtTime(20 * Math.log10(Q), audioCtx.currentTime, 0.01);
     }
   }
 
@@ -791,7 +810,9 @@
       biquadFilter = audioCtx.createBiquadFilter();
       biquadFilter.type = 'lowpass';
       biquadFilter.frequency.value = cutoff;
-      biquadFilter.Q.value = Q;
+      // Web Audio defines lowpass Q in dB (linear Q = 10^(dB/20)), so convert
+      // the linear Q used everywhere else on this page.
+      biquadFilter.Q.value = 20 * Math.log10(Q);
 
       makeupGain = audioCtx.createGain();
       makeupGain.gain.value = Math.pow(10, computeCompensationDb(cutoff) / 20);
@@ -832,24 +853,49 @@
   // Shared decode path for both an uploaded File and an ArrayBuffer fetched
   // from a local sample under /audio_samples. `label` is what's shown in the
   // track-name readout.
-  async function loadAudioBuffer(arrayBufferPromise, label){
-    trackName.innerHTML = 'Decoding <b>' + label + '</b>…';
-    ensureContext();
-    stopPlayback();
+  function showTrackError(html){
+    trackName.style.color = 'var(--amber)';
+    trackName.style.whiteSpace = 'normal';
+    trackName.style.maxWidth = 'none';
+    trackName.innerHTML = html;
+  }
+  function clearTrackError(){
+    trackName.style.color = '';
+    trackName.style.whiteSpace = '';
+    trackName.style.maxWidth = '';
+  }
+
+  // `getBuffer` is a function returning a Promise<ArrayBuffer>, so that every
+  // step — including creating the AudioContext — runs inside the try block and
+  // any failure is shown on the page instead of dying silently.
+  // Decoded samples are kept in memory so re-selecting one is instant.
+  const decodedCache = new Map();
+
+  async function loadAudioBuffer(getBuffer, label, cacheKey){
+    clearTrackError();
+    trackName.innerHTML = 'Loading <b>' + label + '</b>…';
     try{
-      const arrayBuffer = await arrayBufferPromise;
-      audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
+      ensureContext();
+      stopPlayback();
+      if(cacheKey && decodedCache.has(cacheKey)){
+        audioBuffer = decodedCache.get(cacheKey);
+      } else {
+        const arrayBuffer = await getBuffer();
+        trackName.innerHTML = 'Decoding <b>' + label + '</b>…';
+        audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
+        if(cacheKey) decodedCache.set(cacheKey, audioBuffer);
+      }
       trackName.innerHTML = '<b>' + label + '</b> · ' + audioBuffer.duration.toFixed(1) + 's';
       playToggle.disabled = false;
       playOffset = 0;
       setStreamStatus('ready');
       setBadge(false);
-      return true;
+      return { ok:true };
     }catch(err){
-      trackName.textContent = 'Could not decode this track — try an MP3 or WAV.';
       playToggle.disabled = true;
+      audioBuffer = null;
       setStreamStatus('idle');
-      return false;
+      return { ok:false, err:err };
     }
   }
 
@@ -857,7 +903,10 @@
     const file = e.target.files[0];
     if(!file) return;
     sampleSelect.value = ''; // custom upload supersedes the dropdown choice
-    await loadAudioBuffer(file.arrayBuffer(), file.name);
+    const r = await loadAudioBuffer(()=>file.arrayBuffer(), file.name);
+    if(!r.ok){
+      showTrackError('Could not decode <b>' + file.name + '</b> — try an MP3 or WAV. (' + (r.err && r.err.message ? r.err.message : r.err) + ')');
+    }
   });
 
   sampleSelect.addEventListener('change', async (e)=>{
@@ -865,15 +914,65 @@
     if(!path) return;
     const label = e.target.options[e.target.selectedIndex].text;
     fileInput.value = ''; // dropdown choice supersedes any previously-picked file
-    const ok = await loadAudioBuffer(
-      fetch(path).then(res=>{
-        if(!res.ok) throw new Error('fetch failed: ' + res.status);
+
+    // Resolve the sample path. When the page runs inside a preview/iframe
+    // (location is about:srcdoc, blob:, null …) a relative URL cannot be
+    // built, so fall back to the published site, which allows cross-origin
+    // reads (GitHub Pages sends Access-Control-Allow-Origin: *).
+    const PUBLISHED_BASE = 'https://songnuan-pop.github.io/filter_demo/';
+    let url;
+    try{
+      url = /^(https?|file):$/.test(location.protocol)
+        ? new URL(path, location.href).href
+        : new URL(path, PUBLISHED_BASE).href;
+    }catch(_){
+      url = PUBLISHED_BASE + path;
+    }
+    let stage = 'fetch';
+    const r = await loadAudioBuffer(async ()=>{
+      // Default cache mode: the browser keeps the downloaded file, so only
+      // the first load pays the download cost.
+      const res = await fetch(url);
+      if(!res.ok){
+        stage = 'http';
+        throw new Error('HTTP ' + res.status);
+      }
+      const total = parseInt(res.headers.get('Content-Length') || '0', 10);
+      if(!res.body || !res.body.getReader){
         return res.arrayBuffer();
-      }),
-      label
-    );
-    if(!ok){
-      trackName.innerHTML = 'Could not load <b>' + label + '</b> — check that /audio_samples/ sits next to this HTML file (and that the page is served over http/https, not opened directly as a local file).';
+      }
+      // Stream the body so we can show real download progress.
+      const reader = res.body.getReader();
+      const chunks = [];
+      let received = 0;
+      for(;;){
+        const { done, value } = await reader.read();
+        if(done) break;
+        chunks.push(value);
+        received += value.length;
+        const mb = (received / 1048576).toFixed(1);
+        trackName.innerHTML = 'Downloading <b>' + label + '</b> · ' + mb + ' MB' +
+          (total ? ' / ' + (total / 1048576).toFixed(1) + ' MB (' + Math.round(received / total * 100) + '%)' : '') + '…';
+      }
+      const out = new Uint8Array(received);
+      let pos = 0;
+      for(const c of chunks){ out.set(c, pos); pos += c.length; }
+      return out.buffer;
+    }, label, url);
+
+    if(!r.ok){
+      const msg = r.err && r.err.message ? r.err.message : String(r.err);
+      let hint;
+      if(stage === 'http'){
+        hint = msg + ' — the server has no file at <code>' + path + '</code>. Check the filename and extension (.mp3 vs .wav), upper/lower case, and that it was pushed and deployed.';
+      } else if(/decode|EncodingError|unable/i.test(msg) || r.err instanceof DOMException){
+        hint = 'the file was downloaded but could not be decoded (' + msg + '). It may be corrupt, an unsupported codec, or a Git LFS pointer file instead of the real audio.';
+      } else {
+        hint = 'network error (' + msg + ') while fetching <code>' + path + '</code>. Check your connection, and that the page is served over http(s), not opened as a local file.';
+      }
+      showTrackError('Could not load <b>' + label + '</b> — ' + hint);
+      // Reset so choosing the same item again fires "change" and retries.
+      sampleSelect.value = '';
     }
   });
 
